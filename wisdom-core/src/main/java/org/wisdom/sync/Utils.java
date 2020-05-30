@@ -7,6 +7,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.wisdom.core.Block;
 import org.wisdom.core.account.Transaction;
+import org.wisdom.db.BlockWrapper;
 import org.wisdom.encoding.JSONEncodeDecoder;
 import org.wisdom.genesis.Genesis;
 import org.wisdom.keystore.crypto.SHA3Utility;
@@ -40,15 +41,21 @@ public class Utils {
         t.payload = tx.getPayload().toByteArray();
         t.to = tx.getTo().toByteArray();
         t.signature = tx.getSignature().toByteArray();
+        if (t.type == Transaction.Type.DEPLOY_CONTRACT.ordinal()) {
+            t.contractType = t.payload[0];
+        }
+        if (t.type == Transaction.Type.CALL_CONTRACT.ordinal()) {
+            t.methodType = t.payload[0];
+            t.contractType = Transaction.getContract(t.methodType);
+        }
         return t;
     }
 
     public static List<Block> parseBlocks(List<WisdomOuterClass.Block> bks) {
-        List<Block> res = new ArrayList<>();
-        for (WisdomOuterClass.Block bk : bks) {
-            res.add(parseBlock(bk));
-        }
-        return res;
+        return bks.stream()
+                .map(Utils::parseBlock)
+                .sorted(BlockWrapper::compareBlock)
+                .collect(Collectors.toList());
     }
 
     public static Block parseBlock(WisdomOuterClass.Block bk) {
@@ -63,6 +70,7 @@ public class Utils {
         b.nBits = bk.getNBits().toByteArray();
         b.nNonce = bk.getNonce().toByteArray();
         b.body = new ArrayList<>();
+        b.accountStateTrieRoot = bk.getAccountStateTrieRoot() == null ? null : bk.getAccountStateTrieRoot().toByteArray();
         if (bk.getBodyList() == null || bk.getBodyList().size() == 0) {
             return b;
         }
@@ -105,7 +113,8 @@ public class Utils {
                 .setHeight((int) block.nHeight)
                 .setCreatedAt((int) block.nTime)
                 .setNBits(ByteString.copyFrom(getBytes(block.nBits)))
-                .setNonce(ByteString.copyFrom(getBytes(block.nNonce)));
+                .setNonce(ByteString.copyFrom(getBytes(block.nNonce)))
+                .setAccountStateTrieRoot(ByteString.copyFrom(block.accountStateTrieRoot == null ? new byte[0] : block.accountStateTrieRoot));
 
         if (block.body == null || block.body.size() == 0) {
             return bd.build();
@@ -185,7 +194,7 @@ public class Utils {
 
     // before encode 14127.549 kb
     // after encode 11639.101 kb
-    public static void main(String[] args)throws Exception{
+    public static void main(String[] args) throws Exception {
         Resource resource = new ClassPathResource("genesis/wisdom-genesis-generator.json");
         Genesis g = new JSONEncodeDecoder().decode(IOUtils.toByteArray(resource.getInputStream()), Genesis.class);
         Block b = new Block(g);

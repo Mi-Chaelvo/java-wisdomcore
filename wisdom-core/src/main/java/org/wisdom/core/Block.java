@@ -21,41 +21,40 @@ package org.wisdom.core;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.protobuf.ByteString;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Hex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.tdf.common.util.HexBytes;
+import org.tdf.rlp.RLP;
 import org.wisdom.consensus.pow.EconomicModel;
+import org.wisdom.core.account.Transaction;
+import org.wisdom.core.incubator.Incubator;
 import org.wisdom.crypto.HashUtil;
+import org.wisdom.db.AccountState;
 import org.wisdom.encoding.BigEndian;
 import org.wisdom.genesis.Genesis;
-import org.wisdom.keystore.crypto.RipemdUtility;
-import org.wisdom.keystore.crypto.SHA3Utility;
 import org.wisdom.keystore.wallet.KeystoreAction;
 import org.wisdom.merkletree.MerkleTree;
 import org.wisdom.merkletree.TreeNode;
 import org.wisdom.protobuf.tcp.ProtocolModel;
 import org.wisdom.util.Address;
 import org.wisdom.util.Arrays;
-import org.wisdom.core.account.Account;
-import org.wisdom.core.account.Transaction;
-import org.wisdom.core.incubator.Incubator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toList;
-import static java.util.stream.Collectors.toSet;
 
 @Component
+@Slf4j(topic = "block")
 public class Block {
     public static final int MAX_NOTICE_LENGTH = 32;
     public static final int HASH_SIZE = 32;
@@ -63,7 +62,6 @@ public class Block {
 
     // reserve 128kb for transports
     public static final int RESERVED_SPACE = 128 * (1 << 10);
-    private static final Logger logger = LoggerFactory.getLogger(Block.class);
 
     public static byte[] calculatePOWHash(Block block) {
         byte[] raw = Block.getHeaderRaw(block);
@@ -120,21 +118,18 @@ public class Block {
         try {
             return Hex.decodeHex(new MerkleTree(hashes).getRoot().getHash().toCharArray());
         } catch (Exception e) {
-            logger.error("error occured when calculate merkle root");
+            log.error("error occurred when calculate merkle root");
         }
         return new byte[32];
     }
 
-    public static byte[] calculateMerkleState(List<Account> accounts) {
-        List<String> hashes = new ArrayList<>();
-        for (Account account : accounts) {
-            hashes.add(account.getIdHexString());
-        }
+    public static byte[] calculateMerkleState(List<AccountState> accountStateList) {
+        List<String> hashes = accountStateList.stream().map(AccountState::getHexAccountState).collect(Collectors.toList());
         if (hashes.size() > 0) {
             try {
                 return Hex.decodeHex(new MerkleTree(hashes).getRoot().getHash().toCharArray());
             } catch (Exception e) {
-                logger.error("error occured when calculate merkle state");
+                log.error("error occurred when calculate merkle state");
             }
         }
         return new byte[32];
@@ -149,7 +144,7 @@ public class Block {
             try {
                 return Hex.decodeHex(new MerkleTree(hashes).getRoot().getHash().toCharArray());
             } catch (Exception e) {
-                logger.error("error occured when calculate merkle incubate");
+                log.error("error occurred when calculate merkle incubate");
             }
         }
         return new byte[32];
@@ -226,43 +221,52 @@ public class Block {
     }
 
     // block version 0 ~ 2^32-1
+    @RLP(0)
     @Min(0)
     @Max(BigEndian.MAX_UINT_32)
     public long nVersion;
 
+    @RLP(1)
     // parent block hash
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] hashPrevBlock;
 
     // merkle root of transactions
+    @RLP(2)
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] hashMerkleRoot;
 
+    @RLP(3)
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] hashMerkleState;
 
+    @RLP(4)
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] hashMerkleIncubate;
 
     // 32bit unsigned block number
+    @RLP(5)
     @Min(0)
     @Max(BigEndian.MAX_UINT_32)
     public long nHeight;
 
     // 32bit unsigned unix epoch
+    @RLP(6)
     @Min(0)
     @Max(BigEndian.MAX_UINT_32)
     public long nTime;
 
+    @RLP(7)
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] nBits;
 
     // random value from proposer 256bit, next block's seed
+    @RLP(8)
     @NotNull
     @Size(max = HASH_SIZE, min = HASH_SIZE)
     public byte[] nNonce;
@@ -270,7 +274,11 @@ public class Block {
     @Size(max = MAX_NOTICE_LENGTH)
     public byte[] blockNotice;
 
+    @RLP(9)
     public List<Transaction> body;
+
+    @JsonIgnore
+    public byte[] accountStateTrieRoot;
 
     @JsonIgnore
     public long totalWeight;
@@ -320,7 +328,6 @@ public class Block {
         nTime = genesis.timestamp;
         // init initial pow target
         nBits = Hex.decodeHex(genesis.nBits.toCharArray());
-
         // add coin base
         for (Genesis.InitAmount el : genesis.alloc.initAmount) {
             Transaction tx = Transaction.createEmpty();
@@ -415,4 +422,14 @@ public class Block {
         }
         return new MerkleTree(hashes).getLevelSize();
     }
+
+    public static final Comparator<Block> FAT_COMPARATOR = (a, b) ->{
+        if(a.getnHeight() != b.getnHeight())
+            return Long.compare(a.getnHeight(), b.getnHeight());
+        if(a.body.size() != b.body.size()){
+            return -Integer.compare(a.body.size(), b.body.size());
+        }
+        return HexBytes.fromBytes(a.getHash()).compareTo(HexBytes.fromBytes(b.getHash()));
+    };
+
 }

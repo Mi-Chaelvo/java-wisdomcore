@@ -1,10 +1,12 @@
 package org.wisdom.p2p;
 
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,8 +15,8 @@ import java.util.Optional;
  * peers manager plugin
  */
 @Component
+@Slf4j(topic = "net")
 public class PeersManager implements Plugin {
-    private static final Logger logger = LoggerFactory.getLogger(PeersManager.class);
     private static final WisdomOuterClass.Ping PING = WisdomOuterClass.Ping.newBuilder().build();
     private static final WisdomOuterClass.Pong PONG = WisdomOuterClass.Pong.newBuilder().build();
     private PeerServer server;
@@ -66,13 +68,13 @@ public class PeersManager implements Plugin {
                 server.pend(pr);
             }
         } catch (Exception e) {
-            logger.error("parse peer fail");
+            log.error("parse peer fail");
         }
     }
 
     public List<Peer> getPeers() {
         return Optional.ofNullable(server)
-                .map(PeerServer::getPeers).orElse(new ArrayList<>());
+                .map(PeerServer::getPeers).orElse(Collections.emptyList());
     }
 
     public String getSelfAddress() {

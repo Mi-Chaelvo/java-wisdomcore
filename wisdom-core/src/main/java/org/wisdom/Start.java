@@ -18,10 +18,24 @@
 
 package org.wisdom;
 
+
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.UrlResource;
+import org.wisdom.consensus.pow.ProposersState;
+import org.wisdom.db.Candidate;
 import org.wisdom.encoding.JSONEncodeDecoder;
 import org.wisdom.genesis.Genesis;
 import org.wisdom.core.utxo.UTXOSets;
@@ -35,14 +49,18 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.wisdom.keystore.util.StringUtil;
+import org.wisdom.p2p.Peer;
+import org.yaml.snakeyaml.Yaml;
+import org.wisdom.util.FileUtil;
+import java.io.IOException;
+import java.util.Map;
 
-/**
- * @author Roman Mandeleil
- * @since 14.11.2014
- */
+// test cache
 @SpringBootApplication
 @EnableAsync
 @EnableScheduling
+@Slf4j
 public class Start {
     private static final String CODE_ASSERTION_ENV = "ENABLE_CODE_ASSERTION";
 
@@ -51,23 +69,32 @@ public class Start {
 
     public static void main(String[] args) {
         // 关闭 grpc 日志
-        SpringApplication.run(Start.class, args);
+        io.netty.util.internal.logging.InternalLoggerFactory.setDefaultFactory(new InternalLoggerFactory() {
+            @Override
+            protected InternalLogger newInstance(String name) {
+                return new NopLogger();
+            }
+        });
+        SpringApplication app = new SpringApplication(Start.class);
+        app.addInitializers(applicationContext -> {
+            Environment env = applicationContext.getEnvironment();
+            String constant = env.getProperty("wisdom.consensus.max-proposers");
+            if(constant != null && !constant.isEmpty()){
+                ProposersState.MAXIMUM_PROPOSERS = Integer.parseInt(constant);
+            }
+            constant = env.getProperty("wisdom.consensus.community-miner-joins-height");
+            if(constant != null && !constant.isEmpty()){
+                ProposersState.COMMUNITY_MINER_JOINS_HEIGHT = Integer.parseInt(constant);
+            }
+            constant = env.getProperty("wisdom.consensus.attenuation-eras");
+            if(constant != null && !constant.isEmpty()){
+                Candidate.ATTENUATION_ERAS = Integer.parseInt(constant);
+            }
+        });
+
+        app.run(args);
     }
 
-    // wisdom chain configuration
-    @Bean
-    public JdbcTemplate getJDBCTemplate(BasicDataSource dataSource) {
-        JdbcTemplate jdbcTemplate = new JdbcTemplate();
-        jdbcTemplate.setDataSource(dataSource);
-        return jdbcTemplate;
-    }
-
-    @Bean
-    public TransactionTemplate transactionTemplate(PlatformTransactionManager manager) {
-        TransactionTemplate tmpl = new TransactionTemplate();
-        tmpl.setTransactionManager(manager);
-        return tmpl;
-    }
 
     @Bean
     public UTXOSets getUTXOSets() {
@@ -75,14 +102,53 @@ public class Start {
         return utxoSets;
     }
 
+//    @Bean
+//    public Env env(@Value("${wisdom.env-config}") String envFile,
+//                   @Value("${wisdom.env-selector}") String envSelector,
+//                   @Value("${wisdom.consensus.genesis}") String optionalGenesis,
+//                   @Value("${miner.validators}") String optionalValidators) throws IOException {
+//        Resource resource = new FileSystemResource(envFile);
+//        if (!resource.exists()) {
+//            resource = new ClassPathResource(envFile);
+//        }
+//        String genesis;
+//        String validators;
+//        try {
+//            Map<String, Map<String, Map<String, String>>> map = new Yaml().loadAs(resource.getInputStream(), Map.class);
+//            genesis = map.get("env").get(envSelector).get("wisdom-consensus-genesis");
+//            validators = map.get("env").get(envSelector).get("miner-validators");
+//        } catch (Exception e) {
+//            genesis = optionalGenesis;
+//            validators = optionalValidators;
+//        }
+//        Env env = new Env();
+//        env.setGenesis(genesis);
+//        env.setValidatorsFile(validators);
+//        return env;
+//    }
+
+
     @Bean
     public Genesis genesis(JSONEncodeDecoder codec, @Value("${wisdom.consensus.genesis}") String genesis)
             throws Exception {
-        Resource resource = new FileSystemResource(genesis);
-        if (!resource.exists()){
-            resource = new ClassPathResource(genesis);
-        }
+        Resource resource = FileUtil.getResource(genesis);
         return codec.decodeGenesis(IOUtils.toByteArray(resource.getInputStream()));
     }
 
+
+    @Bean
+    public ObjectMapper objectMapper(){
+        ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+        SimpleModule module = new SimpleModule();
+        module.addSerializer(byte[].class, new JSONEncodeDecoder.BytesSerializer());
+        module.addDeserializer(byte[].class, new JSONEncodeDecoder.BytesDeserializer());
+        module.addSerializer(Peer.class, new StdSerializer<Peer>(Peer.class) {
+            @Override
+            public void serialize(Peer value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+                gen.writeString(value.toString());
+            }
+        });
+        mapper.registerModule(module);
+        return mapper;
+    }
 }

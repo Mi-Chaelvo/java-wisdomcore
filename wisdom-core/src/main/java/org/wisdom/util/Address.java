@@ -11,6 +11,7 @@ import java.util.Arrays;
 
 public class Address {
     public static byte[] publicKeyToHash(byte[] publicKey) {
+        if(publicKey.length != 32) throw new RuntimeException("publicKey must be 32-byte");
         return RipemdUtility.ripemd160(SHA3Utility.keccak256(publicKey));
     }
 
@@ -26,27 +27,28 @@ public class Address {
         return Base58Utility.encode(b5);
     }
 
+    public static String publicKeyHashToAddressByType(byte[] publicKeyHash, int type) {
+        byte[] r2 = ByteUtil.prepend(publicKeyHash, (byte) 0);
+        byte[] r3 = SHA3Utility.keccak256(SHA3Utility.keccak256(publicKeyHash));
+        byte[] b4 = ByteUtil.bytearraycopy(r3, 0, 4);
+        byte[] b5 = ByteUtil.byteMerger(r2, b4);
+        if (type == 0)
+            return "WX"+Base58Utility.encode(b5);
+        return "WR"+Base58Utility.encode(b5);
+    }
 
     public static byte[] addressToPublicKeyHash(String address) {
         if (!verifyAddress(address)){
             return null;
         };
-        byte[] r5 = Base58Utility.decode(address);
-        byte[] r2 = ByteUtil.bytearraycopy(r5, 0, 21);
-        return ByteUtil.bytearraycopy(r2, 1, 20);
+        return KeystoreAction.addressToPubkeyHash(address);
     }
 
     private static boolean verifyAddress(String address) {
-        byte[] r5 = Base58Utility.decode(address);
-//        ResultSupport ar = new ResultSupport();
-        if (!address.startsWith("1")) {//地址不是以"1"开头
-            return false;
-        }
-        byte[] r3 = SHA3Utility.keccak256(SHA3Utility.keccak256(KeystoreAction.addressToPubkeyHash(address)));
-        byte[] b4 = ByteUtil.bytearraycopy(r3, 0, 4);
-        byte[] _b4 = ByteUtil.bytearraycopy(r5, r5.length - 4, 4);
-        //正确
-        return Arrays.equals(b4, _b4);
+       if (KeystoreAction.verifyAddress(address) == 0){
+           return true;
+       }
+        return false;
     }
 
     // 从用户输入的地址、公钥或者公钥哈希转化成公钥哈希

@@ -18,7 +18,9 @@
 
 package org.wisdom.util;
 
+import lombok.NonNull;
 import org.bouncycastle.util.encoders.Hex;
+import org.tdf.common.util.ByteArraySet;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -29,9 +31,9 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 
+import java.util.*;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.stream.Collectors;
 
 public class ByteUtil {
 
@@ -99,6 +101,12 @@ public class ByteUtil {
         byte[] r=new byte[count];
         System.arraycopy(s, start, r, 0, count);
         return r;
+    }
+
+    public static byte[] bytearrayridfirst(byte[] s){
+        byte[] t=new byte[s.length-1];
+        System.arraycopy(s,1,t,0,t.length);
+        return t;
     }
 
     /**
@@ -819,5 +827,54 @@ public class ByteUtil {
      */
     public static byte[] parseWord(byte[] input, int offset, int idx) {
         return parseBytes(input, offset + 32 * idx, 32);
+    }
+
+    public static boolean byteListContains(List<byte[]> list,byte[] bytes){
+        if (list == null) return false;
+        for (int i=0;i<list.size();i++){
+            if (Arrays.equals(list.get(i),bytes))  return true;
+        }
+        return false;
+    }
+
+    public static boolean containsDuplicate(@NonNull List<byte[]> a){
+        Set<byte[]> s = new ByteArraySet(a);
+        return s.size() != a.size();
+    }
+
+    public static List<byte[]> intersect(@NonNull List<byte[]> a,@NonNull  List<byte[]> b){
+        Set<byte[]> as = new ByteArraySet(a);
+        return b.stream()
+                .filter(as::contains)
+                .collect(Collectors.toList());
+    }
+
+    //去重
+    public static List<byte[]> byteListsDistinct(List<byte[]> a){
+        List<byte[]> list = new ArrayList<>();
+        if (a == null) return list;
+        for(int i = 0;i < a.size();i++){
+            for(int j = a.size()-1;j>i;j--){
+                if(Arrays.equals(a.get(i),a.get(j))){
+                    a.remove(j);
+                }
+            }
+        }
+        return a;
+    }
+
+    //交集
+    public static List<byte[]> byteListsIntersection(List<byte[]> a,List<byte[]> b){
+        List<byte[]> list = new ArrayList<>();
+        if (a == null || b == null) return list;
+        for (int i = 0;i<a.size();i++){
+            for (int j = 0;j<b.size();j++){
+                if (Arrays.equals(a.get(i),b.get(j))){
+                    list.add(a.get(i));
+                    break;
+                }
+            }
+        }
+        return list;
     }
 }

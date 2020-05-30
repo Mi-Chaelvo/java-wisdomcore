@@ -1,6 +1,9 @@
 package org.wisdom.consensus.pow;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.math3.fraction.BigFraction;
 import org.slf4j.Logger;
@@ -9,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
+import org.tdf.rlp.RLPIgnored;
 import org.wisdom.Start;
 import org.wisdom.account.PublicKeyHash;
 import org.wisdom.core.Block;
@@ -27,14 +31,15 @@ import java.util.stream.Stream;
  * 撤回抵押事务
  * 2019-10-11 增加投票衰减功能
  */
-@Component
+//@Component
 public class ProposersState implements State<ProposersState> {
     public static Logger logger = LoggerFactory.getLogger(ProposersState.class);
     private static final long MINIMUM_PROPOSER_MORTGAGE = 100000 * EconomicModel.WDC;
-    private static final int MAXIMUM_PROPOSERS = getenv("MAXIMUM_PROPOSERS", 15);
-    public static final int COMMUNITY_MINER_JOINS_HEIGHT = getenv("COMMUNITY_MINER_JOINS_HEIGHT", 522215);
+    public static int MAXIMUM_PROPOSERS = 15;
+    public static int COMMUNITY_MINER_JOINS_HEIGHT = 522215;
 
     @Value("${wisdom.wip-1217.height}")
+    @Setter
     private long WIP_12_17_HEIGHT;
 
     // 投票数每次衰减 10%
@@ -54,16 +59,12 @@ public class ProposersState implements State<ProposersState> {
     }
 
 
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Vote {
         public PublicKeyHash from;
         public long amount;
         public long accumulated;
-
-        public Vote(PublicKeyHash from, long amount, long accumulated) {
-            this.from = from;
-            this.amount = amount;
-            this.accumulated = accumulated;
-        }
     }
 
     public static class Proposer {
@@ -75,9 +76,11 @@ public class ProposersState implements State<ProposersState> {
 
         @JsonIgnore
         // transaction hash -> count
+        @RLPIgnored
         private Map<String, Long> erasCounter;
 
         @JsonIgnore
+        @RLPIgnored
         private Long votesCache;
 
         public String publicKeyHash;
@@ -135,7 +138,6 @@ public class ProposersState implements State<ProposersState> {
                         .longValue());
                 receivedVotes.put(k, v2);
             }
-
         }
 
         void updateTransaction(Transaction tx) {
@@ -195,13 +197,16 @@ public class ProposersState implements State<ProposersState> {
     @Autowired
     public ProposersState(
             @Value("${wisdom.allow-miner-joins-era}") int allowMinersJoinEra,
-            @Value("${wisdom.consensus.block-interval}") int blockInterval
+            @Value("${wisdom.consensus.block-interval}") int blockInterval,
+            @Value("${wisdom.wip-1217.height}")
+            long WIP_12_17_HEIGHT
     ) {
         all = new HashMap<>();
         blockList = new HashSet<>();
         proposers = new ArrayList<>();
         this.allowMinersJoinEra = allowMinersJoinEra;
         this.blockInterval = blockInterval;
+        this.WIP_12_17_HEIGHT = WIP_12_17_HEIGHT;
     }
 
     public List<Proposer> getProposers() {
@@ -322,7 +327,7 @@ public class ProposersState implements State<ProposersState> {
 
     @Override
     public ProposersState copy() {
-        ProposersState state = new ProposersState(this.allowMinersJoinEra, this.blockInterval);
+        ProposersState state = new ProposersState(this.allowMinersJoinEra, this.blockInterval, this.WIP_12_17_HEIGHT);
         state.all = new HashMap<>();
         for (String key : all.keySet()) {
             state.all.put(key, all.get(key).copy());

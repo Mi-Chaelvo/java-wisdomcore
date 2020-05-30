@@ -18,30 +18,83 @@
 
 package org.wisdom.core.account;
 
+import lombok.Builder;
+import lombok.SneakyThrows;
 import org.apache.commons.codec.binary.Hex;
-import org.wisdom.encoding.BigEndian;
-import org.wisdom.util.ByteUtil;
+import org.tdf.common.util.ByteArrayMap;
+import org.tdf.rlp.*;
 
+import java.util.Arrays;
+import java.util.Map;
+
+@RLPDecoding(value = Account.AccountDecoder.class)
+@RLPEncoding(value = Account.AccountEncoder.class)
 public class Account {
-    private byte[] id;
+    static class AccountDecoder implements RLPDecoder<Account> {
 
+        @Override
+        @SneakyThrows
+        public Account decode(RLPElement rlpElement) {
+            RLPList li = rlpElement.asRLPList();
+            Account a = new Account();
+            int i = 0;
+            a.setBlockHeight(li.get(i++).asLong());
+            a.setPubkeyHash(li.get(i++).asBytes());
+            a.setNonce(li.get(i++).asLong());
+            a.setBalance(li.get(i++).asLong());
+            a.setIncubatecost(li.get(i++).asLong());
+            a.setMortgage(li.get(i++).asLong());
+            a.setVote(li.get(i++).asLong());
+            if (i >= li.size())
+                return a;
+            Container c = Container.fromField(Account.class.getDeclaredField("quotaMap"));
+            a.quotaMap = new ByteArrayMap<>((Map<byte[], Long>) RLPCodec.decodeContainer(li.get(i++), c));
+            return a;
+        }
+    }
+
+    static class AccountEncoder implements RLPEncoder<Account> {
+
+        @Override
+        @SneakyThrows
+        public RLPElement encode(Account a) {
+            RLPList ret = RLPList.createEmpty(7);
+            ret.add(RLPElement.readRLPTree(a.getBlockHeight()));
+            ret.add(RLPElement.readRLPTree(a.getPubkeyHash()));
+            ret.add(RLPElement.readRLPTree(a.getNonce()));
+            ret.add(RLPElement.readRLPTree(a.getBalance()));
+            ret.add(RLPElement.readRLPTree(a.getIncubatecost()));
+            ret.add(RLPElement.readRLPTree(a.getMortgage()));
+            ret.add(RLPElement.readRLPTree(a.getVote()));
+            if(a.getQuotaMap() == null || a.getQuotaMap().isEmpty())
+                return ret;
+            ret.add(RLPElement.readRLPTree(a.getQuotaMap()));
+            return ret;
+        }
+    }
+
+    @RLP(0)
     private long blockHeight;
-
+    @RLP(1)
     private byte[] pubkeyHash;
-
+    @RLP(2)
     private long nonce;
-
+    @RLP(3)
     private long balance;
-
+    @RLP(4)
     private long incubatecost;
-
+    @RLP(5)
     private long mortgage;
-
+    @RLP(6)
     private long vote;
+
+    @RLP(7)
+    private Map<byte[], Long> quotaMap;
 
     public Account() {
     }
 
+    @Builder
     public Account(long blockHeight, byte[] pubkeyHash, long nonce, long balance, long incubatecost, long mortgage, long vote) {
         this.blockHeight = blockHeight;
         this.pubkeyHash = pubkeyHash;
@@ -50,18 +103,22 @@ public class Account {
         this.incubatecost = incubatecost;
         this.mortgage = mortgage;
         this.vote = vote;
+        this.quotaMap = new ByteArrayMap<>();
     }
 
-    public String getIdHexString() {
-        return Hex.encodeHexString(getId());
-    }
-
-    public byte[] getId() {
-        return ByteUtil.merge(pubkeyHash, BigEndian.encodeUint32(blockHeight));
-    }
-
-    public void setId(byte[] id) {
-        this.id = id;
+    public Account(long blockHeight, byte[] pubkeyHash, long nonce, long balance, long incubatecost, long mortgage, long vote, Map<byte[], Long> quotaMap) {
+        this.blockHeight = blockHeight;
+        this.pubkeyHash = pubkeyHash;
+        this.nonce = nonce;
+        this.balance = balance;
+        this.incubatecost = incubatecost;
+        this.mortgage = mortgage;
+        this.vote = vote;
+        if (quotaMap == null) {
+            this.quotaMap = new ByteArrayMap<>();
+        } else {
+            this.quotaMap = quotaMap;
+        }
     }
 
     public long getBlockHeight() {
@@ -120,7 +177,34 @@ public class Account {
         this.vote = vote;
     }
 
-    public Account copy() {
-        return new Account(blockHeight, pubkeyHash, nonce, balance, incubatecost, mortgage, vote);
+    public Map<byte[], Long> getQuotaMap() {
+        return quotaMap;
     }
+
+    public void setQuotaMap(Map<byte[], Long> quotaMap) {
+        this.quotaMap = quotaMap;
+    }
+
+    public Account copy() {
+        return new Account(blockHeight, pubkeyHash, nonce, balance, incubatecost, mortgage, vote, quotaMap);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Account account = (Account) o;
+        return blockHeight == account.blockHeight &&
+                nonce == account.nonce &&
+                balance == account.balance &&
+                incubatecost == account.incubatecost &&
+                mortgage == account.mortgage &&
+                vote == account.vote &&
+                Arrays.equals(pubkeyHash, account.pubkeyHash);
+    }
+
+    public String getKey() {
+        return Hex.encodeHexString(this.pubkeyHash);
+    }
+
 }

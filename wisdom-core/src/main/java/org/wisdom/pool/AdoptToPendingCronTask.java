@@ -8,12 +8,12 @@ import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Component;
 import org.wisdom.command.Configuration;
 import org.wisdom.command.TransactionCheck;
-import org.wisdom.core.account.AccountDB;
 import org.wisdom.core.account.Transaction;
-import org.wisdom.core.incubator.Incubator;
-import org.wisdom.core.incubator.IncubatorDB;
 import org.wisdom.core.incubator.RateTable;
+import org.wisdom.db.AccountState;
+import org.wisdom.db.WisdomRepository;
 import org.wisdom.ipc.IpcConfig;
+import org.wisdom.util.Address;
 
 import java.util.*;
 
@@ -35,10 +35,7 @@ public class AdoptToPendingCronTask implements SchedulingConfigurer {
     Configuration configuration;
 
     @Autowired
-    AccountDB accountDB;
-
-    @Autowired
-    IncubatorDB incubatorDB;
+    WisdomRepository repository;
 
     @Autowired
     RateTable rateTable;
@@ -61,13 +58,22 @@ public class AdoptToPendingCronTask implements SchedulingConfigurer {
                     List<TransPool> list = entry.getValue();
                     for (TransPool transPool : list) {
                         Transaction transaction = transPool.getTransaction();
-//                        if (pendingNonce.getNonce() < transaction.nonce) {
-//                        }
-                        Incubator incubator=null;
-                        if(transaction.type==0x0a || transaction.type==0x0b || transaction.type==0x0c){
-                            incubator=incubatorDB.selectIncubator(transaction.payload);
+                        //调用合约
+                        if (transaction.type == 8) {
+                            byte[] payload = transaction.payload;
+                            if (payload[0] == 0 || payload[0] == 2) {//更换拥有者或增发
+                                if (peningTransPool.Iscontractpool(entry.getKey(), transaction.to)) {
+                                    break;
+                                }
+                            }
                         }
-                        if (transactionCheck.checkoutPool(transaction,incubator)) {
+                        Optional<AccountState> oa = repository.getConfirmedAccountState(Address.publicKeyToHash(transaction.from));
+                        if (!oa.isPresent()) {
+                            maps.put(new String(entry.getKey()), adoptTransPool.getKey(transaction));
+                            continue;
+                        }
+                        AccountState accountState = oa.get();
+                        if (transactionCheck.checkoutPool(transaction, accountState)) {
                             //超过pending上限
                             if (index > configuration.getMaxpending()) {
                                 state = true;

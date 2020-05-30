@@ -18,6 +18,7 @@
 
 package org.wisdom.consensus.pow;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.wisdom.encoding.JSONEncodeDecoder;
@@ -29,6 +30,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
+import org.wisdom.util.FileUtil;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -36,8 +38,8 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
+@Slf4j(topic = "init")
 public class ConsensusConfig {
-    private static Logger logger = LoggerFactory.getLogger(ConsensusConfig.class);
 
     private List<String> validators;
 
@@ -45,7 +47,7 @@ public class ConsensusConfig {
 
     private List<String> validatorPubKeyHashes;
 
-    private String minerPubKeyHash;
+    private byte[] minerPubKeyHash;
 
     @Value("${wisdom.consensus.enable-mining}")
     private volatile boolean enableMining;
@@ -62,7 +64,7 @@ public class ConsensusConfig {
         return validatorPubKeyHashes;
     }
 
-    public String getMinerPubKeyHash() {
+    public byte[] getMinerPubKeyHash() {
         return minerPubKeyHash;
     }
 
@@ -72,16 +74,13 @@ public class ConsensusConfig {
 
     public ConsensusConfig(JSONEncodeDecoder codec,
                            @Value("${miner.coinbase}") String coinbase,
-                           @Value("${miner.validators}") String validatorsFile,
-                           @Value("${wisdom.consensus.enable-mining}") boolean enableMining
+                           @Value("${wisdom.consensus.enable-mining}") boolean enableMining,
+                           @Value("${miner.validators}") String validatorsFile
     ) throws Exception {
-        Resource  resource = new FileSystemResource(validatorsFile);
-        if(!resource.exists()){
-            resource = new ClassPathResource(validatorsFile);
-        }
+        Resource  resource = FileUtil.getResource(validatorsFile);
         if (enableMining) {
-            minerPubKeyHash = Hex.encodeHexString(KeystoreAction.addressToPubkeyHash(coinbase));
-            logger.info("mining is enabled, your coin base address is " + coinbase);
+            minerPubKeyHash = KeystoreAction.addressToPubkeyHash(coinbase);
+            log.info("mining is enabled, your coin base address is " + coinbase);
         }
         validators = Arrays.asList(codec.decode(IOUtils.toByteArray(resource.getInputStream()), String[].class));
         validatorPubKeyHashes = new ArrayList<>();
@@ -90,7 +89,7 @@ public class ConsensusConfig {
             URI uri = new URI(v);
             String pubKeyHashes = Hex.encodeHexString(KeystoreAction.addressToPubkeyHash(uri.getRawUserInfo()));
             validatorPubKeyHashes.add(pubKeyHashes);
-            logger.info("initial validator found address = " + uri.getRawUserInfo());
+            log.info("initial validator found address = " + uri.getRawUserInfo());
             if (!pubKeyHashes.equals(minerPubKeyHash)) {
                 peers.add(uri.getHost() + ":" + uri.getPort());
             }

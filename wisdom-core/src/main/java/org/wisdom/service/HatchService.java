@@ -18,34 +18,56 @@
 
 package org.wisdom.service;
 
+import java.util.List;
+
 public interface HatchService {
 
     Object getBalance(String pubkeyhash);
 
     Object getNonce(String pubkeyhash);
 
-    Object getTransfer(int height);
+    Object getTransfer(long height);
 
-    Object getHatch(int height);
+    Object getHatch(long height);
 
-    Object getInterest(int height);
+    Object getInterest(long height);
 
-    Object getShare(int height);
+    Object getShare(long height);
 
-    Object getCost(int height);
+    Object getCost(long height);
 
-    Object getVote(int height);
+    Object getVote(long height);
 
-    Object getCancelVote(int height);
+    Object getCancelVote(long height);
 
-    Object getMortgage(int height);
+    Object getMortgage(long height);
 
-    Object getCancelMortgage(int height);
+    Object getCancelMortgage(long height);
 
     Object getNowInterest(String tranhash);
 
     Object getNowShare(String tranhash);
 
+    @Deprecated
     Object getTxrecordFromAddress(String address);
 
+    Object getCoinBaseList(long height);
+
+    Object getAssetList(long height);
+
+    Object getAssetTransferList(long height);
+
+    Object getAssetOwnerList(long height);
+
+    Object getAssetIncreasedList(long height);
+
+    Object getDepositList(long height);
+
+    Object getBalanceList(List<String> addresslist);
+
+    Object getRateheightLockList(long height);
+
+    Object getRateheightLockDepositList(long height);
+
+    Object getRateheightLockWithdrawList(long height);
 }

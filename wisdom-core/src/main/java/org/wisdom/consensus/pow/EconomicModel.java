@@ -18,12 +18,21 @@
 
 package org.wisdom.consensus.pow;
 
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.wisdom.core.state.EraLinkedStateFactory;
+import org.wisdom.genesis.Genesis;
 
+import javax.annotation.PostConstruct;
 
+// comment
 @Component
+@Setter
+@Slf4j(topic = "经济模型")
 public class EconomicModel {
     public static final long WDC = 100000000;
 
@@ -43,34 +52,80 @@ public class EconomicModel {
     @Value("${wisdom.consensus.blocks-per-era}")
     private int blocksPerEra;
 
+    @Autowired
+    private Genesis genesis;
 
-    public long getConsensusRewardAtHeight(long height){
-        long era = height / HALF_PERIOD;
+    @Getter
+    private long total;
+
+    public EconomicModel(@Value("${wisdom.consensus.block-interval}") int blockInterval,  @Value("${wisdom.block-interval-switch-era}") long blockIntervalSwitchEra, @Value("${wisdom.block-interval-switch-to}") int blockIntervalSwitchTo,     @Value("${wisdom.consensus.blocks-per-era}")
+            int blocksPerEra) {
+        this.blockInterval = blockInterval;
+        this.blockIntervalSwitchEra = blockIntervalSwitchEra;
+        this.blockIntervalSwitchTo = blockIntervalSwitchTo;
+        this.blocksPerEra = blocksPerEra;
+    }
+
+    @PostConstruct
+    public void init() {
+        for (Genesis.InitAmount amount : genesis.alloc.initAmount) {
+            total += amount.balance.longValue() * WDC;
+        }
+        total += getTotalSupply();
+
+        log.info("total supply is {} WDC", total * 1.0 / WDC);
+    }
+
+    public long getConsensusRewardAtHeight(long height) {
         long reward = INITIAL_SUPPLY;
-        for(long i = 0; i < era; i++){
+        long era = height / HALF_PERIOD;
+        for (long i = 0; i < era; i++) {
             reward = reward * 52218182 / 100000000;
         }
-        if(blockIntervalSwitchEra >= 0 && EraLinkedStateFactory.getEraAtBlockNumber(height, blocksPerEra) >= blockIntervalSwitchEra){
+        if (blockIntervalSwitchEra >= 0 && EraLinkedStateFactory.getEraAtBlockNumber(height, blocksPerEra) >= blockIntervalSwitchEra) {
             return reward * blockIntervalSwitchTo / blockInterval;
         }
         return reward;
     }
 
-    public static void printRewardPerEra(){
-        for(long reward = INITIAL_SUPPLY; reward > 0; reward = reward * 52218182 / 100000000){
-            System.out.println(reward * 1.0 / WDC );
+    public long getConsensusRewardAtHeight1(long height) {
+        long era = (height > 5736000) ? ((height - 5736000) / 6307200 + 1) : (height / 6307200);
+        long reward = INITIAL_SUPPLY;
+        for (long i = 0; i < era; i++) {
+            reward = reward * 52218182 / 100000000;
+        }
+        if (blockIntervalSwitchEra >= 0 && EraLinkedStateFactory.getEraAtBlockNumber(height, blocksPerEra) >= blockIntervalSwitchEra) {
+            return reward * blockIntervalSwitchTo / blockInterval;
+        }
+        return reward;
+    }
+
+    public static void printRewardPerEra() {
+        for (long reward = INITIAL_SUPPLY; reward > 0; reward = reward * 52218182 / 100000000) {
+            System.out.println(reward * 1.0 / WDC);
         }
     }
 
     // 9140868887284800
-    public long getTotalSupply(){
+    public long getTotalSupply() {
         long totalSupply = 0;
-        for(long i = 0; ; i++){
-            long reward = getConsensusRewardAtHeight(i);
-            if(reward == 0){
+        for (long i = 0; ; i++) {
+            long reward = getConsensusRewardAtHeight1(i);
+            if (reward == 0) {
                 return totalSupply;
             }
             totalSupply += reward;
         }
+    }
+
+
+    public static void main(String[] args) {
+        EconomicModel model = new EconomicModel(30, 2380, 10, 120);
+        for (long i = 0; i < 2000000; i++) {
+            if (model.getConsensusRewardAtHeight(i) != model.getConsensusRewardAtHeight1(i)) {
+                System.out.println("==========================");
+            }
+        }
+        System.out.println(model.getTotalSupply());
     }
 }
