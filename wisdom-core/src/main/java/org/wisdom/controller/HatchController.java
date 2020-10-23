@@ -72,6 +72,22 @@ public class HatchController {
         return hatchService.getNowShare(coinHash);
     }
 
+    @RequestMapping(value = "/WisdomCore/getInviteTradeAddress")
+    public APIResult getInviteTradeAddress(@RequestParam("address") String address) {
+        if (KeystoreAction.verifyAddress(address) < 0 || address.equals("") || address == null) {
+            return APIResult.newFailed("Illegal Address");
+        }
+        return hatchService.getInviteTradeList(address);
+    }
+
+    @RequestMapping(value = "/WisdomCore/getTradeList")
+    public APIResult getTradeList(@RequestParam("address") String address) {
+        if (KeystoreAction.verifyAddress(address) < 0 || address.equals("") || address == null) {
+            return APIResult.newFailed("Illegal Address");
+        }
+        return hatchService.getTradeList(address);
+    }
+
     @GetMapping(value = "/WisdomCore/sendTransferList")
     public Object sendTransferList(@RequestParam("height") long height) {
         return hatchService.getTransfer(height);
@@ -170,4 +186,10 @@ public class HatchController {
         List<String> addresslist = Arrays.asList(addressStrs.split(","));
         return hatchService.getBalanceList(addresslist);
     }
+
+    @GetMapping(value = "/WisdomCore/getCreatedAT")
+    public Object getCreatedAT(@RequestParam("height") long height) {
+        return hatchService.getCreatedAT(height);
+    }
+
 }
